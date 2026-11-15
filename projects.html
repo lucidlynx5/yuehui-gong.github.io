@@ -269,7 +269,8 @@
 #appearanceToggle{border:1px solid var(--line);border-radius:2px;background:var(--bg);color:var(--ink);font:11px var(--mono);padding:9px 12px;white-space:nowrap}#appearanceToggle:focus-visible{outline:2px solid var(--accent);outline-offset:4px}
 html.day{--bg:#fff;--ink:#202522;--ink-dim:#59625c;--ink-faint:#69716c;--line:rgba(20,30,25,.18);--land-dim:rgba(20,30,25,.5);--land-bright:rgba(20,30,25,.85);--ocean-dot:rgba(20,30,25,.16);--grid-dot:rgba(20,30,25,.26);color-scheme:light}
 html:not(.day){color-scheme:dark}
-.day .globe-wrap{background:#fff}.day #earthCanvas{filter:invert(1)}
+.day .globe-wrap{background:var(--bg)}
+.day .globe-wrap .earth-fallback{filter:grayscale(1) contrast(1.15) brightness(1.12)!important}
 .day .ring-outer{border-color:#20252220}.day .crosshair-v,.day .crosshair-h{background:#20252212}
 .day .tick-right{background:repeating-linear-gradient(to bottom,#20252260 0 1px,transparent 1px 11px)}.day .tick-bottom{background:repeating-linear-gradient(to right,#20252250 0 1px,transparent 1px 15px)}
 .day .card.is-selected .card-name{color:var(--ink)}.day .card.is-selected .card-frame{box-shadow:0 0 0 2px var(--ink),0 16px 45px #0002}.day .card-frame::after{background:var(--ink);color:#fff}.day .card:focus-visible{outline-color:var(--ink)}
@@ -297,8 +298,9 @@ html:not(.day){color-scheme:dark}
 html .globe-wrap .marker .core{background:#c0ed65;border-color:#17220b;box-shadow:0 0 0 1px #c0ed6599,0 0 8px #c0ed6570;}
 html .globe-wrap .marker.active .core{background:#c0ed65;box-shadow:0 0 0 2px #c0ed6570,0 0 16px #c0ed65;}
 html .globe-wrap .marker .ring{border-color:#c0ed65;box-shadow:0 0 8px #c0ed6540;}
-html.day .globe-wrap .marker .core,html.day .globe-wrap .marker.active .core{background:#c0ed65;border-color:#355508;box-shadow:0 0 0 1px #35550890,0 0 10px #c0ed65;}
-html.day .globe-wrap .marker .ring{border-color:#c0ed65;}
+html.day .globe-wrap .marker .core{background:#52732d;border-color:#fff;box-shadow:0 0 0 1px #385520;}
+html.day .globe-wrap .marker.active .core{background:#385520;box-shadow:0 0 0 2px #fff,0 0 0 3px #385520;}
+html.day .globe-wrap .marker .ring{border-color:#52732d;box-shadow:none;}
 </style>
 <link rel="stylesheet" href="assets/home-cursor.css?v=shared-point-1"><link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@300;400;500;600;700&display=swap"></head>
 <body data-page="projects">
@@ -433,7 +435,7 @@ html.day .globe-wrap .marker .ring{border-color:#c0ed65;}
   var earthImage = new Image();
   var fallback = null;
   if (!gl) {
-    fallback = document.createElement('img');
+    fallback = document.createElement('img'); fallback.className='earth-fallback';
     fallback.style.cssText = 'width:100%;height:100%;object-fit:cover;filter:grayscale(1) contrast(1.2);border-radius:50%;';
     canvas.replaceWith(fallback);
   }
@@ -442,13 +444,13 @@ html.day .globe-wrap .marker .ring{border-color:#c0ed65;}
     if (!gl.getShaderParameter(s, gl.COMPILE_STATUS)) throw new Error(gl.getShaderInfoLog(s));
     return s;
   }
-  var program, angle, tilt, earthTilt = -3.77;
+  var program, angle, tilt, daylight, earthTilt = -3.77;
   if (gl) {
     program = gl.createProgram();
     gl.attachShader(program, shader(gl.VERTEX_SHADER,
       'attribute vec2 position; varying vec2 uv; void main(){uv=position;gl_Position=vec4(position,0.,1.);}'));
     gl.attachShader(program, shader(gl.FRAGMENT_SHADER,
-      "precision highp float;\nvarying vec2 uv;\nuniform sampler2D surface;\nuniform float longitude;\nuniform float latitude;\nfloat hash(vec2 p){return fract(sin(dot(p,vec2(127.1,311.7)))*43758.5453);}\nfloat landAt(vec2 p){vec3 c=texture2D(surface,vec2(fract(p.x),clamp(p.y,0.,1.))).rgb;return smoothstep(-.025,.025,max(c.r,c.g)-c.b);}\nvoid main(){\n float r=dot(uv,uv);if(r>1.)discard;\n vec3 n=vec3(uv,sqrt(1.-r));\n vec3 world=vec3(n.x,n.y*cos(latitude)+n.z*sin(latitude),n.z*cos(latitude)-n.y*sin(latitude));\n vec2 map=vec2(fract((atan(world.x,world.z)+longitude)/6.2831853+.5),.5-asin(world.y)/3.14159265);\n vec3 rgb=texture2D(surface,map).rgb;\n float land=landAt(map);\n float gray=dot(rgb,vec3(.2126,.7152,.0722));\n float light=pow(max(dot(n,normalize(vec3(-.7,1.,.65))),0.),1.7);\n float grain=hash(floor(map*vec2(2400.,1200.)));\n vec2 cell=map*vec2(500.,250.);\n float point=1.-smoothstep(.09,.24,length(fract(cell)-.5));\n float density=hash(floor(cell));\n float edge=abs(land-landAt(map+vec2(.0007,0.)))+abs(land-landAt(map+vec2(0.,.0014)));\n float terrain=land*(.025+pow(gray,.7)*light*.72)*(.30+.70*grain);\n float particles=point*mix(.045, .16+light*.32,land);\n float beacons=point*step(.975,density)*land*.85;\n vec2 grid=abs(fract(map*vec2(72.,36.))-.5);\n float lines=(1.-smoothstep(.005,.025,min(grid.x,grid.y)))*.023;\n float coast=edge*(.09+.25*light);\n float limb=pow(1.-n.z,5.)*(.015+.06*light);\n float value=terrain+particles+beacons+coast+lines+limb;\n gl_FragColor=vec4(vec3(value),1.-smoothstep(.997,1.,r));\n}"));
+      "precision highp float;\nvarying vec2 uv;\nuniform sampler2D surface;\nuniform float longitude;\nuniform float latitude;\nuniform float daylight;\nfloat hash(vec2 p){return fract(sin(dot(p,vec2(127.1,311.7)))*43758.5453);}\nfloat landAt(vec2 p){vec3 c=texture2D(surface,vec2(fract(p.x),clamp(p.y,0.,1.))).rgb;return smoothstep(-.025,.025,max(c.r,c.g)-c.b);}\nvoid main(){\n float r=dot(uv,uv);if(r>1.)discard;\n vec3 n=vec3(uv,sqrt(1.-r));\n vec3 world=vec3(n.x,n.y*cos(latitude)+n.z*sin(latitude),n.z*cos(latitude)-n.y*sin(latitude));\n vec2 map=vec2(fract((atan(world.x,world.z)+longitude)/6.2831853+.5),.5-asin(world.y)/3.14159265);\n vec3 rgb=texture2D(surface,map).rgb;\n float land=landAt(map);\n float gray=dot(rgb,vec3(.2126,.7152,.0722));\n float light=pow(max(dot(n,normalize(vec3(-.7,1.,.65))),0.),1.7);\n float grain=hash(floor(map*vec2(2400.,1200.)));\n vec2 cell=map*vec2(500.,250.);\n float point=1.-smoothstep(.09,.24,length(fract(cell)-.5));\n float density=hash(floor(cell));\n float edge=abs(land-landAt(map+vec2(.0007,0.)))+abs(land-landAt(map+vec2(0.,.0014)));\n float terrain=land*(.025+pow(gray,.7)*light*.72)*(.30+.70*grain);\n float particles=point*mix(.045, .16+light*.32,land);\n float beacons=point*step(.975,density)*land*.85;\n vec2 grid=abs(fract(map*vec2(72.,36.))-.5);\n float lines=(1.-smoothstep(.005,.025,min(grid.x,grid.y)))*.023;\n float coast=edge*(.09+.25*light);\n float limb=pow(1.-n.z,5.)*(.015+.06*light);\n float value=terrain+particles+beacons+coast+lines+limb;\n float litho=clamp(land*(.21+pow(gray,.8)*.43)*(.70+.30*grain)*(.8+.2*light)+point*mix(.035,.15,land)+edge*.19+lines*1.6+limb*.7,0.,.92);\n vec3 paper=mix(vec3(.96,.97,.965),vec3(.255,.28,.265),litho);\n gl_FragColor=vec4(mix(vec3(value),paper,daylight),1.-smoothstep(.997,1.,r));\n}"));
     gl.linkProgram(program);
     if (!gl.getProgramParameter(program, gl.LINK_STATUS)) throw new Error(gl.getProgramInfoLog(program));
     gl.useProgram(program);
@@ -456,7 +458,7 @@ html.day .globe-wrap .marker .ring{border-color:#c0ed65;}
     gl.bufferData(gl.ARRAY_BUFFER,new Float32Array([-1,-1,1,-1,-1,1,-1,1,1,-1,1,1]),gl.STATIC_DRAW);
     var position = gl.getAttribLocation(program,'position');
     gl.enableVertexAttribArray(position); gl.vertexAttribPointer(position,2,gl.FLOAT,false,0,0);
-    angle = gl.getUniformLocation(program,'longitude'); tilt = gl.getUniformLocation(program,'latitude');
+    angle = gl.getUniformLocation(program,'longitude'); tilt = gl.getUniformLocation(program,'latitude'); daylight = gl.getUniformLocation(program,'daylight');
     var texture = gl.createTexture(); gl.bindTexture(gl.TEXTURE_2D,texture);
     gl.texParameteri(gl.TEXTURE_2D,gl.TEXTURE_WRAP_S,gl.CLAMP_TO_EDGE);
     gl.texParameteri(gl.TEXTURE_2D,gl.TEXTURE_WRAP_T,gl.CLAMP_TO_EDGE);
@@ -493,11 +495,12 @@ html.day .globe-wrap .marker .ring{border-color:#c0ed65;}
       layer.appendChild(m); markers.push(m);
     });
   }
+  window.addEventListener('site-theme',function(){drawEarth(earthLon,earthTilt);});
   function drawEarth(lon, latitude){
     if(latitude !== undefined) earthTilt=latitude;
     var cameraLat = earthTilt*Math.PI/180;
     earthLon=lon;
-    if(gl && earthReady){gl.uniform1f(angle,lon*Math.PI/180);gl.uniform1f(tilt,cameraLat);gl.drawArrays(gl.TRIANGLES,0,6);}
+    if(gl && earthReady){gl.uniform1f(angle,lon*Math.PI/180);gl.uniform1f(tilt,cameraLat);gl.uniform1f(daylight,document.documentElement.classList.contains('day')?1:0);gl.drawArrays(gl.TRIANGLES,0,6);}
     projects.forEach(function(p,i){
       if(!markers[i]) return;
       var lat=p.lat*Math.PI/180, delta=(p.lon-lon)*Math.PI/180;
